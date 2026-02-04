@@ -1,34 +1,169 @@
 import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
+import Editor, { type Monaco } from '@monaco-editor/react'
 import './App.css'
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [code, setCode] = useState('// Write your pseudocode here\n')
+  const [output, setOutput] = useState<string[]>([])
+  const [editorKey, setEditorKey] = useState(0)
+
+  // Force re-render on window resize to fix zoom issues
+  useState(() => {
+    const handleResize = () => setEditorKey(prev => prev + 1)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  })
+
+  const handleEditorWillMount = (monaco: Monaco) => {
+    // Register custom pseudocode language
+    monaco.languages.register({ id: 'pseudocode' })
+    
+    monaco.languages.setMonarchTokensProvider('pseudocode', {
+      keywords: [
+        'IF', 'THEN', 'ELSE', 'ENDIF', 'WHILE', 'FOR', 'ENDWHILE', 'ENDFOR',
+        'FUNCTION', 'RETURN', 'OUTPUT', 'INPUT', 'SET', 'TO', 'DO',
+        'REPEAT', 'UNTIL', 'CASE', 'OF', 'OTHERWISE', 'ENDCASE',
+        'PROCEDURE', 'CALL', 'DECLARE', 'CONSTANT', 'NEXT', 'TYPE'
+      ],
+      types: [
+        'INTEGER', 'STRING', 'BOOLEAN', 'REAL', 'CHAR', 'ARRAY', 'DATE', 'RECORD'
+      ],
+      constants: ['TRUE', 'FALSE', 'NULL'],
+      operators: ['←', '=', '+', '-', '*', '/', '<', '>', '≤', '≥', '≠', 'AND', 'OR', 'NOT', 'MOD', 'DIV'],
+      tokenizer: {
+        root: [
+          [/[A-Z]+/, {
+            cases: {
+              '@keywords': 'keyword',
+              '@types': 'type',
+              '@constants': 'constant',
+              '@operators': 'operator',
+              '@default': 'identifier'
+            }
+          }],
+          [/[a-z_]\w*/, 'variable'],
+          [/"([^"\\]|\\.)*$/, 'string.invalid'],
+          [/"/, { token: 'string.quote', bracket: '@open', next: '@string' }],
+          [/\d+(\.\d+)?/, 'number'],
+          [/\/\/.*$/, 'comment'],
+          [/#.*$/, 'comment'],
+        ],
+        string: [
+          [/[^\\"]+/, 'string'],
+          [/"/, { token: 'string.quote', bracket: '@close', next: '@pop' }]
+        ]
+      }
+    })
+
+    // Define theme colors
+    monaco.editor.defineTheme('pseudocode-theme', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [
+        { token: 'keyword', foreground: '569CD6', fontStyle: 'bold' },
+        { token: 'type', foreground: '4EC9B0', fontStyle: 'bold' },
+        { token: 'constant', foreground: '4FC1FF' },
+        { token: 'operator', foreground: 'D4D4D4' },
+        { token: 'variable', foreground: '9CDCFE' },
+        { token: 'string', foreground: 'CE9178' },
+        { token: 'number', foreground: 'B5CEA8' },
+        { token: 'comment', foreground: '6A9955', fontStyle: 'italic' }
+      ],
+      colors: {
+        'editor.background': '#1E1E1E'
+      }
+    })
+  }
+
+  const handleRun = () => {
+    // Placeholder for execution logic
+    setOutput([
+      '> Running pseudocode...',
+      '> Execution not yet implemented',
+      '> Your code:',
+      code
+    ])
+  }
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+    <div style={{ 
+      height: '100vh', 
+      display: 'flex', 
+      flexDirection: 'column',
+      padding: '20px',
+      boxSizing: 'border-box',
+      backgroundColor: '#1E1E1E',
+      color: '#D4D4D4'
+    }}>
+      <h1 style={{ margin: '0 0 20px 0', color: '#D4D4D4' }}>Pseudocode Editor</h1>
+      
+      <div style={{ 
+        flex: '1', 
+        marginBottom: '10px', 
+        border: '1px solid #ccc',
+        minHeight: '300px',
+        overflow: 'hidden'
+      }}>
+        <Editor
+          key={editorKey}
+          height="100%"
+          defaultLanguage="pseudocode"
+          value={code}
+          onChange={(value) => setCode(value || '')}
+          theme="pseudocode-theme"
+          beforeMount={handleEditorWillMount}
+          options={{
+            minimap: { enabled: false },
+            fontSize: 14,
+            lineNumbers: 'on',
+            roundedSelection: false,
+            scrollBeyondLastLine: false,
+            automaticLayout: true,
+            padding: { top: 10 }
+          }}
+        />
       </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
+
+      <button 
+        onClick={handleRun}
+        style={{ 
+          backgroundColor: '#4CAF50', 
+          color: 'white', 
+          padding: '12px 24px',
+          fontSize: '16px',
+          border: 'none',
+          borderRadius: '4px',
+          cursor: 'pointer',
+          marginBottom: '10px',
+          fontWeight: 'bold'
+        }}
+      >
+        Run
+      </button>
+
+      <div style={{ 
+        height: '200px',
+        minHeight: '200px',
+        maxHeight: '200px',
+        backgroundColor: '#1E1E1E',
+        color: '#D4D4D4',
+        padding: '10px',
+        fontFamily: 'monospace',
+        fontSize: '14px',
+        overflow: 'auto',
+        border: '1px solid #ccc',
+        borderRadius: '4px',
+        flexShrink: 0
+      }}>
+        {output.length === 0 ? (
+          <span style={{ color: '#6A9955' }}>Terminal output will appear here...</span>
+        ) : (
+          output.map((line, index) => (
+            <div key={index}>{line}</div>
+          ))
+        )}
       </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
+    </div>
   )
 }
 
