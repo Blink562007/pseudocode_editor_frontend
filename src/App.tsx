@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import Editor, { type Monaco } from '@monaco-editor/react'
+import { executePseudocode } from './api/pseudocodeApi'
 import './App.css'
 
 function App() {
   const [code, setCode] = useState('// Write your pseudocode here\n')
   const [output, setOutput] = useState<string[]>([])
   const [editorKey, setEditorKey] = useState(0)
+  const [isRunning, setIsRunning] = useState(false)
 
   // Force re-render on window resize to fix zoom issues
   useState(() => {
@@ -75,14 +77,33 @@ function App() {
     })
   }
 
-  const handleRun = () => {
-    // Placeholder for execution logic
-    setOutput([
-      '> Running pseudocode...',
-      '> Execution not yet implemented',
-      '> Your code:',
-      code
-    ])
+  const handleRun = async () => {
+    setIsRunning(true)
+    setOutput(['> Running pseudocode...'])
+    
+    try {
+      const result = await executePseudocode(code)
+      
+      if (result.success) {
+        setOutput([
+          '> Execution successful',
+          '',
+          result.output || ''
+        ])
+      } else {
+        setOutput([
+          `> Error${result.line ? ` at line ${result.line}` : ''}:`,
+          result.error || 'Unknown error occurred'
+        ])
+      }
+    } catch (error) {
+      setOutput([
+        '> Error:',
+        error instanceof Error ? error.message : 'Failed to execute code'
+      ])
+    } finally {
+      setIsRunning(false)
+    }
   }
 
   return (
@@ -126,19 +147,20 @@ function App() {
 
       <button 
         onClick={handleRun}
+        disabled={isRunning}
         style={{ 
-          backgroundColor: '#4CAF50', 
+          backgroundColor: isRunning ? '#666' : '#4CAF50', 
           color: 'white', 
           padding: '12px 24px',
           fontSize: '16px',
           border: 'none',
           borderRadius: '4px',
-          cursor: 'pointer',
+          cursor: isRunning ? 'not-allowed' : 'pointer',
           marginBottom: '10px',
           fontWeight: 'bold'
         }}
       >
-        Run
+        {isRunning ? 'Running...' : 'Run'}
       </button>
 
       <div style={{ 
@@ -159,7 +181,14 @@ function App() {
           <span style={{ color: '#6A9955' }}>Terminal output will appear here...</span>
         ) : (
           output.map((line, index) => (
-            <div key={index}>{line}</div>
+            <div 
+              key={index}
+              style={{ 
+                color: line.includes('Error') || line.includes('error') ? '#F48771' : '#D4D4D4'
+              }}
+            >
+              {line}
+            </div>
           ))
         )}
       </div>
