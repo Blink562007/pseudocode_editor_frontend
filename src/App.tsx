@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import Editor, { type Monaco } from '@monaco-editor/react'
-import { executePseudocode } from './api/pseudocodeApi'
+import { executePseudocode, validatePseudocode, type ValidationError, type ValidationWarning } from './api/pseudocodeApi'
 import './App.css'
 
 function App() {
@@ -79,27 +79,45 @@ function App() {
 
   const handleRun = async () => {
     setIsRunning(true)
-    setOutput(['> Running pseudocode...'])
+    setOutput(['> Validating pseudocode...'])
     
     try {
-      const result = await executePseudocode(code)
+      // Validate the code
+      const validationResult = await validatePseudocode(code)
       
-      if (result.success) {
-        setOutput([
-          '> Execution successful',
-          '',
-          result.output || ''
-        ])
+      if (!validationResult.isValid) {
+        const errorMessages = ['> Validation Failed:', '']
+        
+        validationResult.errors.forEach((error: ValidationError) => {
+          errorMessages.push(`Line ${error.lineNumber}: ${error.message}`)
+        })
+        
+        if (validationResult.warnings.length > 0) {
+          errorMessages.push('', '> Warnings:')
+          validationResult.warnings.forEach((warning: ValidationWarning) => {
+            errorMessages.push(`Line ${warning.lineNumber}: ${warning.message}`)
+          })
+        }
+        
+        setOutput(errorMessages)
+        setIsRunning(false)
+        return
+      }
+
+      // Show success with any warnings
+      if (validationResult.warnings.length > 0) {
+        const messages = ['> Validation passed with warnings:', '']
+        validationResult.warnings.forEach((warning: ValidationWarning) => {
+          messages.push(`Line ${warning.lineNumber}: ${warning.message}`)
+        })
+        setOutput(messages)
       } else {
-        setOutput([
-          `> Error${result.line ? ` at line ${result.line}` : ''}:`,
-          result.error || 'Unknown error occurred'
-        ])
+        setOutput(['> Validation passed', '> No errors found'])
       }
     } catch (error) {
       setOutput([
         '> Error:',
-        error instanceof Error ? error.message : 'Failed to execute code'
+        error instanceof Error ? error.message : 'Failed to validate code'
       ])
     } finally {
       setIsRunning(false)

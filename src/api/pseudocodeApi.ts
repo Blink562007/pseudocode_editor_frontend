@@ -8,6 +8,24 @@ export interface ExecuteResponse {
   line?: number;
 }
 
+export interface ValidationError {
+  lineNumber: number;
+  message: string;
+  code: string;
+}
+
+export interface ValidationWarning {
+  lineNumber: number;
+  message: string;
+  code: string;
+}
+
+export interface ValidationResponse {
+  isValid: boolean;
+  errors: ValidationError[];
+  warnings: ValidationWarning[];
+}
+
 /**
  * Execute pseudocode by sending it to the backend
  */
@@ -38,9 +56,9 @@ export async function executePseudocode(code: string): Promise<ExecuteResponse> 
 /**
  * Validate pseudocode syntax without executing
  */
-export async function validatePseudocode(code: string): Promise<ExecuteResponse> {
+export async function validatePseudocode(code: string): Promise<ValidationResponse> {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/validate`, {
+    const response = await fetch(`${API_BASE_URL}/api/pseudocode/validate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -56,8 +74,13 @@ export async function validatePseudocode(code: string): Promise<ExecuteResponse>
     return data;
   } catch (error) {
     return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to connect to backend',
+      isValid: false,
+      errors: [{
+        lineNumber: 0,
+        message: error instanceof Error ? error.message : 'Failed to connect to backend',
+        code: 'CONNECTION_ERROR'
+      }],
+      warnings: []
     };
   }
 }
