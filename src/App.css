@@ -80,6 +80,9 @@
     margin: 0;
     padding: 0;
     flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
   }
 
   .sidebar-item {
@@ -88,6 +91,7 @@
     border-radius: 6px;
     color: #cbd5e1;
     cursor: pointer;
+    margin-bottom: 8px;
   }
 
   .sidebar-item:hover {
@@ -98,6 +102,23 @@
     background: #1e293b;
     border-color: #475569;
     color: #f8fafc;
+  }
+
+  .sidebar-item-title {
+    font-size: 0.9rem;
+    line-height: 1.2;
+  }
+
+  .sidebar-item-meta {
+    margin-top: 4px;
+    font-size: 0.72rem;
+    color: #94a3b8;
+  }
+
+  .sidebar-empty {
+    color: #94a3b8;
+    font-size: 0.85rem;
+    padding: 4px 2px;
   }
 
   .sidebar-button {

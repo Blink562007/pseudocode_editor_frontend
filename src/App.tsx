@@ -1,12 +1,20 @@
 import { useEffect, useState } from 'react'
 import Editor, { type Monaco } from '@monaco-editor/react'
-import { validatePseudocode, type ValidationError, type ValidationWarning } from './api/pseudocodeApi'
+import {
+  getPseudocodeDocumentById,
+  getPseudocodeDocuments,
+  validatePseudocode,
+  type PseudocodeDocument,
+  type ValidationError,
+  type ValidationWarning
+} from './api/pseudocodeApi'
 import './App.css'
 
 interface EditorDocument {
   id: string
   title: string
   content: string
+  updatedAt?: string
 }
 
 function createDocumentId(): string {
@@ -18,21 +26,47 @@ function createDocumentId(): string {
 }
 
 function App() {
-  const [documents, setDocuments] = useState<EditorDocument[]>([
-    { id: createDocumentId(), title: 'Untitled', content: '' }
-  ])
+  const [documents, setDocuments] = useState<EditorDocument[]>([])
   const [selectedDocumentId, setSelectedDocumentId] = useState<string>('')
   const [code, setCode] = useState('')
   const [output, setOutput] = useState<string[]>([])
   const [editorKey, setEditorKey] = useState(0)
   const [isRunning, setIsRunning] = useState(false)
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false)
+  const [documentsLoadError, setDocumentsLoadError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!selectedDocumentId && documents.length > 0) {
-      setSelectedDocumentId(documents[0].id)
-      setCode(documents[0].content)
+    const loadDocuments = async () => {
+      setIsLoadingDocuments(true)
+      setDocumentsLoadError(null)
+
+      try {
+        const fetchedDocuments = await getPseudocodeDocuments()
+        const sortedDocuments = [...fetchedDocuments].sort((a: PseudocodeDocument, b: PseudocodeDocument) => {
+          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        })
+
+        setDocuments(sortedDocuments)
+
+        if (sortedDocuments.length > 0) {
+          setSelectedDocumentId(sortedDocuments[0].id)
+          setCode(sortedDocuments[0].content)
+        } else {
+          setSelectedDocumentId('')
+          setCode('')
+        }
+      } catch (error) {
+        setDocumentsLoadError(error instanceof Error ? error.message : 'Failed to load documents')
+        setDocuments([])
+        setSelectedDocumentId('')
+        setCode('')
+      } finally {
+        setIsLoadingDocuments(false)
+      }
     }
-  }, [documents, selectedDocumentId])
+
+    void loadDocuments()
+  }, [])
 
   useEffect(() => {
     const handleResize = () => setEditorKey(prev => prev + 1)
@@ -44,7 +78,20 @@ function App() {
   const selectedDocument = documents.find((document) => document.id === selectedDocumentId) ?? null
   const hasUnsavedChanges = selectedDocument !== null && code !== selectedDocument.content
 
-  const handleSelectDocument = (documentId: string) => {
+  const formatLastModified = (updatedAt?: string) => {
+    if (!updatedAt) {
+      return 'Last modified just now'
+    }
+
+    const parsedDate = new Date(updatedAt)
+    if (Number.isNaN(parsedDate.getTime())) {
+      return 'Last modified unknown'
+    }
+
+    return `Last modified ${parsedDate.toLocaleString()}`
+  }
+
+  const handleSelectDocument = async (documentId: string) => {
     if (documentId === selectedDocumentId) {
       return
     }
@@ -64,8 +111,27 @@ function App() {
       return
     }
 
-    setSelectedDocumentId(documentId)
-    setCode(nextDocument.content)
+    try {
+      const fullDocument = await getPseudocodeDocumentById(documentId)
+      setSelectedDocumentId(documentId)
+      setCode(fullDocument.content)
+
+      setDocuments((previousDocuments) => previousDocuments.map((document) => (
+        document.id === documentId
+          ? {
+            ...document,
+            title: fullDocument.title,
+            content: fullDocument.content,
+            updatedAt: fullDocument.updatedAt
+          }
+          : document
+      )))
+    } catch (error) {
+      setOutput([
+        '> Error:',
+        error instanceof Error ? error.message : 'Failed to load selected document'
+      ])
+    }
   }
 
   const handleCreateNewDocument = () => {
@@ -82,7 +148,8 @@ function App() {
     const newDocument: EditorDocument = {
       id: createDocumentId(),
       title: 'Untitled',
-      content: ''
+      content: '',
+      updatedAt: new Date().toISOString()
     }
 
     setDocuments((previousDocuments) => [newDocument, ...previousDocuments])
@@ -209,13 +276,26 @@ function App() {
         <aside className="sidebar-panel">
           <h2>Documents</h2>
           <ul className="sidebar-list">
-            {documents.map((document) => (
+            {isLoadingDocuments && <li className="sidebar-empty">Loading documents…</li>}
+
+            {!isLoadingDocuments && documentsLoadError && (
+              <li className="sidebar-empty">Failed to load documents: {documentsLoadError}</li>
+            )}
+
+            {!isLoadingDocuments && !documentsLoadError && documents.length === 0 && (
+              <li className="sidebar-empty">No documents yet. Create one to get started.</li>
+            )}
+
+            {!isLoadingDocuments && !documentsLoadError && documents.map((document) => (
               <li
                 key={document.id}
                 className={document.id === selectedDocumentId ? 'sidebar-item active' : 'sidebar-item'}
-                onClick={() => handleSelectDocument(document.id)}
+                onClick={() => {
+                  void handleSelectDocument(document.id)
+                }}
               >
-                {document.title}
+                <div className="sidebar-item-title">{document.title}</div>
+                <div className="sidebar-item-meta">{formatLastModified(document.updatedAt)}</div>
               </li>
             ))}
           </ul>

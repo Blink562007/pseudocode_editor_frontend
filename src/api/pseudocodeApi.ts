@@ -1,5 +1,14 @@
 // API configuration
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://localhost:7065';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5062';
+
+export interface PseudocodeDocument {
+  id: string;
+  title: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+  language: string;
+}
 
 export interface ExecuteResponse {
   success: boolean;
@@ -36,7 +45,7 @@ export async function executePseudocode(code: string): Promise<ExecuteResponse> 
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ code }),
+      body: JSON.stringify({ content: code }),
     });
 
     if (!response.ok) {
@@ -63,7 +72,7 @@ export async function validatePseudocode(code: string): Promise<ValidationRespon
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ code }),
+      body: JSON.stringify({ content: code }),
     });
 
     if (!response.ok) {
@@ -83,4 +92,32 @@ export async function validatePseudocode(code: string): Promise<ValidationRespon
       warnings: []
     };
   }
+}
+
+/**
+ * Get all saved pseudocode documents.
+ */
+export async function getPseudocodeDocuments(): Promise<PseudocodeDocument[]> {
+  const response = await fetch(`${API_BASE_URL}/api/pseudocode`);
+
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+
+  const data = (await response.json()) as PseudocodeDocument[];
+  return data;
+}
+
+/**
+ * Get one pseudocode document by id.
+ */
+export async function getPseudocodeDocumentById(id: string): Promise<PseudocodeDocument> {
+  const response = await fetch(`${API_BASE_URL}/api/pseudocode/${encodeURIComponent(id)}`);
+
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+
+  const data = (await response.json()) as PseudocodeDocument;
+  return data;
 }
