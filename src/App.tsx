@@ -241,15 +241,36 @@ function App() {
   }
 
   const handleSaveDocument = async () => {
-    if (!selectedDocument) {
-      return
-    }
-
-    const normalizedTitle = selectedDocument.title.trim() || 'Untitled'
-
     setSaveState('saving')
 
     try {
+      if (!selectedDocument) {
+        const createdDocument = await createPseudocodeDocument({
+          title: 'Untitled',
+          content: code,
+          language: 'pseudocode'
+        })
+
+        setCode(createdDocument.content)
+        setSelectedDocumentId(createdDocument.id)
+        setDocuments((previousDocuments) => sortDocumentsByUpdatedAt([
+          {
+            id: createdDocument.id,
+            title: createdDocument.title,
+            content: createdDocument.content,
+            updatedAt: createdDocument.updatedAt,
+            language: createdDocument.language,
+            isLocal: false
+          },
+          ...previousDocuments
+        ]))
+
+        setSavedIndicator()
+        return
+      }
+
+      const normalizedTitle = selectedDocument.title.trim() || 'Untitled'
+
       const payload = {
         title: normalizedTitle,
         content: code,
@@ -604,7 +625,7 @@ function App() {
               onClick={() => {
                 void handleSaveDocument()
               }}
-              disabled={!selectedDocument || saveState === 'saving'}
+              disabled={saveState === 'saving'}
               className="save-button"
               type="button"
             >
