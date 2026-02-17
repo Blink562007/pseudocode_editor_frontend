@@ -10,6 +10,12 @@ export interface PseudocodeDocument {
   language: string;
 }
 
+export interface SavePseudocodeRequest {
+  title: string;
+  content: string;
+  language: string;
+}
+
 export interface ExecuteResponse {
   success: boolean;
   output?: string;
@@ -120,4 +126,57 @@ export async function getPseudocodeDocumentById(id: string): Promise<PseudocodeD
 
   const data = (await response.json()) as PseudocodeDocument;
   return data;
+}
+
+/**
+ * Create a new pseudocode document.
+ */
+export async function createPseudocodeDocument(request: SavePseudocodeRequest): Promise<PseudocodeDocument> {
+  const response = await fetch(`${API_BASE_URL}/api/pseudocode`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+
+  const data = (await response.json()) as PseudocodeDocument;
+  return data;
+}
+
+/**
+ * Update an existing pseudocode document.
+ */
+export async function updatePseudocodeDocument(id: string, request: SavePseudocodeRequest): Promise<PseudocodeDocument> {
+  const response = await fetch(`${API_BASE_URL}/api/pseudocode/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+
+  const data = (await response.json()) as PseudocodeDocument;
+  return data;
+}
+
+/**
+ * Delete a pseudocode document.
+ */
+export async function deletePseudocodeDocument(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/pseudocode/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
 }

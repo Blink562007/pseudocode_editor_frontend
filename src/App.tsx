@@ -1,8 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Editor, { type Monaco } from '@monaco-editor/react'
 import {
+  createPseudocodeDocument,
+  deletePseudocodeDocument,
   getPseudocodeDocumentById,
   getPseudocodeDocuments,
+  updatePseudocodeDocument,
   validatePseudocode,
   type PseudocodeDocument,
   type ValidationError,
@@ -15,14 +18,26 @@ interface EditorDocument {
   title: string
   content: string
   updatedAt?: string
+  language?: string
+  isLocal?: boolean
 }
+
+type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
 function createDocumentId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID()
+    return `local-${crypto.randomUUID()}`
   }
 
-  return `doc-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  return `local-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function sortDocumentsByUpdatedAt(documents: EditorDocument[]): EditorDocument[] {
+  return [...documents].sort((a, b) => {
+    const first = a.updatedAt ? new Date(a.updatedAt).getTime() : 0
+    const second = b.updatedAt ? new Date(b.updatedAt).getTime() : 0
+    return second - first
+  })
 }
 
 function App() {
@@ -34,6 +49,13 @@ function App() {
   const [isRunning, setIsRunning] = useState(false)
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false)
   const [documentsLoadError, setDocumentsLoadError] = useState<string | null>(null)
+  const [saveState, setSaveState] = useState<SaveState>('idle')
+  const [renamingDocumentId, setRenamingDocumentId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
+
+  const saveStateTimeoutRef = useRef<number | null>(null)
+  const toastTimeoutRef = useRef<number | null>(null)
 
   useEffect(() => {
     const loadDocuments = async () => {
@@ -42,9 +64,11 @@ function App() {
 
       try {
         const fetchedDocuments = await getPseudocodeDocuments()
-        const sortedDocuments = [...fetchedDocuments].sort((a: PseudocodeDocument, b: PseudocodeDocument) => {
-          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-        })
+        const normalizedDocuments = fetchedDocuments.map((document: PseudocodeDocument) => ({
+          ...document,
+          isLocal: false
+        }))
+        const sortedDocuments = sortDocumentsByUpdatedAt(normalizedDocuments)
 
         setDocuments(sortedDocuments)
 
@@ -75,8 +99,56 @@ function App() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
+  useEffect(() => {
+    const handleSaveHotkey = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault()
+        void handleSaveDocument()
+      }
+    }
+
+    window.addEventListener('keydown', handleSaveHotkey)
+    return () => window.removeEventListener('keydown', handleSaveHotkey)
+  })
+
+  useEffect(() => {
+    return () => {
+      if (saveStateTimeoutRef.current !== null) {
+        window.clearTimeout(saveStateTimeoutRef.current)
+      }
+
+      if (toastTimeoutRef.current !== null) {
+        window.clearTimeout(toastTimeoutRef.current)
+      }
+    }
+  }, [])
+
   const selectedDocument = documents.find((document) => document.id === selectedDocumentId) ?? null
   const hasUnsavedChanges = selectedDocument !== null && code !== selectedDocument.content
+  const selectedDocumentTitle = selectedDocument?.title ?? 'No Document Selected'
+
+  const showToast = (message: string) => {
+    if (toastTimeoutRef.current !== null) {
+      window.clearTimeout(toastTimeoutRef.current)
+    }
+
+    setToastMessage(message)
+    toastTimeoutRef.current = window.setTimeout(() => {
+      setToastMessage(null)
+    }, 2200)
+  }
+
+  const setSavedIndicator = () => {
+    setSaveState('saved')
+
+    if (saveStateTimeoutRef.current !== null) {
+      window.clearTimeout(saveStateTimeoutRef.current)
+    }
+
+    saveStateTimeoutRef.current = window.setTimeout(() => {
+      setSaveState('idle')
+    }, 1300)
+  }
 
   const formatLastModified = (updatedAt?: string) => {
     if (!updatedAt) {
@@ -92,7 +164,7 @@ function App() {
   }
 
   const handleSelectDocument = async (documentId: string) => {
-    if (documentId === selectedDocumentId) {
+    if (documentId === selectedDocumentId || renamingDocumentId === documentId) {
       return
     }
 
@@ -111,6 +183,12 @@ function App() {
       return
     }
 
+    if (nextDocument.isLocal) {
+      setSelectedDocumentId(documentId)
+      setCode(nextDocument.content)
+      return
+    }
+
     try {
       const fullDocument = await getPseudocodeDocumentById(documentId)
       setSelectedDocumentId(documentId)
@@ -122,7 +200,9 @@ function App() {
             ...document,
             title: fullDocument.title,
             content: fullDocument.content,
-            updatedAt: fullDocument.updatedAt
+            updatedAt: fullDocument.updatedAt,
+            language: fullDocument.language,
+            isLocal: false
           }
           : document
       )))
@@ -149,12 +229,171 @@ function App() {
       id: createDocumentId(),
       title: 'Untitled',
       content: '',
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      language: 'pseudocode',
+      isLocal: true
     }
 
     setDocuments((previousDocuments) => [newDocument, ...previousDocuments])
     setSelectedDocumentId(newDocument.id)
     setCode('')
+    setSaveState('idle')
+  }
+
+  const handleSaveDocument = async () => {
+    if (!selectedDocument) {
+      return
+    }
+
+    const normalizedTitle = selectedDocument.title.trim() || 'Untitled'
+
+    setSaveState('saving')
+
+    try {
+      const payload = {
+        title: normalizedTitle,
+        content: code,
+        language: selectedDocument.language ?? 'pseudocode'
+      }
+
+      const savedDocument = selectedDocument.isLocal
+        ? await createPseudocodeDocument(payload)
+        : await updatePseudocodeDocument(selectedDocument.id, payload)
+
+      setCode(savedDocument.content)
+      setSelectedDocumentId(savedDocument.id)
+
+      setDocuments((previousDocuments) => {
+        const mapped = previousDocuments.map((document) => {
+          const matchId = selectedDocument.isLocal ? selectedDocument.id : savedDocument.id
+
+          if (document.id !== matchId) {
+            return document
+          }
+
+          return {
+            id: savedDocument.id,
+            title: savedDocument.title,
+            content: savedDocument.content,
+            updatedAt: savedDocument.updatedAt,
+            language: savedDocument.language,
+            isLocal: false
+          }
+        })
+
+        return sortDocumentsByUpdatedAt(mapped)
+      })
+
+      setSavedIndicator()
+    } catch (error) {
+      setSaveState('error')
+      setOutput([
+        '> Error:',
+        error instanceof Error ? error.message : 'Failed to save document'
+      ])
+    }
+  }
+
+  const handleDeleteDocument = async (documentId: string) => {
+    const documentToDelete = documents.find((document) => document.id === documentId)
+    if (!documentToDelete) {
+      return
+    }
+
+    const shouldDelete = window.confirm(`Delete '${documentToDelete.title}'? This cannot be undone.`)
+    if (!shouldDelete) {
+      return
+    }
+
+    try {
+      if (!documentToDelete.isLocal) {
+        await deletePseudocodeDocument(documentId)
+      }
+
+      const remainingDocuments = documents.filter((document) => document.id !== documentId)
+      const sortedRemaining = sortDocumentsByUpdatedAt(remainingDocuments)
+      setDocuments(sortedRemaining)
+
+      if (documentId === selectedDocumentId) {
+        const nextDocument = sortedRemaining[0]
+
+        if (nextDocument) {
+          setSelectedDocumentId(nextDocument.id)
+          setCode(nextDocument.content)
+        } else {
+          setSelectedDocumentId('')
+          setCode('')
+        }
+      }
+
+      showToast('Document deleted')
+    } catch (error) {
+      setOutput([
+        '> Error:',
+        error instanceof Error ? error.message : 'Failed to delete document'
+      ])
+    }
+  }
+
+  const beginRenameDocument = (document: EditorDocument) => {
+    setRenamingDocumentId(document.id)
+    setRenameValue(document.title)
+  }
+
+  const cancelRenameDocument = () => {
+    setRenamingDocumentId(null)
+    setRenameValue('')
+  }
+
+  const commitRenameDocument = async (documentId: string) => {
+    const documentToRename = documents.find((document) => document.id === documentId)
+    if (!documentToRename) {
+      cancelRenameDocument()
+      return
+    }
+
+    const normalizedTitle = renameValue.trim() || 'Untitled'
+
+    if (normalizedTitle === documentToRename.title) {
+      cancelRenameDocument()
+      return
+    }
+
+    setDocuments((previousDocuments) => previousDocuments.map((document) => (
+      document.id === documentId ? { ...document, title: normalizedTitle } : document
+    )))
+
+    cancelRenameDocument()
+
+    if (documentToRename.isLocal) {
+      return
+    }
+
+    try {
+      const updatedDocument = await updatePseudocodeDocument(documentId, {
+        title: normalizedTitle,
+        content: documentToRename.content,
+        language: documentToRename.language ?? 'pseudocode'
+      })
+
+      setDocuments((previousDocuments) => sortDocumentsByUpdatedAt(previousDocuments.map((document) => (
+        document.id === documentId
+          ? {
+            ...document,
+            title: updatedDocument.title,
+            content: updatedDocument.content,
+            updatedAt: updatedDocument.updatedAt,
+            language: updatedDocument.language,
+            isLocal: false
+          }
+          : document
+      ))))
+    } catch (error) {
+      setOutput([
+        '> Error:',
+        error instanceof Error ? error.message : 'Failed to rename document'
+      ])
+    }
   }
 
   const handleEditorWillMount = (monaco: Monaco) => {
@@ -268,8 +507,10 @@ function App() {
   return (
     <div className="app-shell">
       <header className="header-panel">
-        <h1>Pseudocode Editor</h1>
-        <span className="header-subtitle">Cambridge-style pseudocode practice workspace</span>
+        <div className="header-title-wrap">
+          <h1>{selectedDocumentTitle}{hasUnsavedChanges ? ' •' : ''}</h1>
+          <span className="header-subtitle">Cambridge-style pseudocode practice workspace</span>
+        </div>
       </header>
 
       <main className="workspace-grid">
@@ -286,18 +527,71 @@ function App() {
               <li className="sidebar-empty">No documents yet. Create one to get started.</li>
             )}
 
-            {!isLoadingDocuments && !documentsLoadError && documents.map((document) => (
-              <li
-                key={document.id}
-                className={document.id === selectedDocumentId ? 'sidebar-item active' : 'sidebar-item'}
-                onClick={() => {
-                  void handleSelectDocument(document.id)
-                }}
-              >
-                <div className="sidebar-item-title">{document.title}</div>
-                <div className="sidebar-item-meta">{formatLastModified(document.updatedAt)}</div>
-              </li>
-            ))}
+            {!isLoadingDocuments && !documentsLoadError && documents.map((document) => {
+              const documentHasUnsavedChanges = document.id === selectedDocumentId && hasUnsavedChanges
+
+              return (
+                <li
+                  key={document.id}
+                  className={document.id === selectedDocumentId ? 'sidebar-item active' : 'sidebar-item'}
+                  onClick={() => {
+                    void handleSelectDocument(document.id)
+                  }}
+                >
+                  <div className="sidebar-item-row">
+                    {renamingDocumentId === document.id ? (
+                      <input
+                        className="rename-input"
+                        value={renameValue}
+                        autoFocus
+                        onChange={(event) => setRenameValue(event.target.value)}
+                        onClick={(event) => event.stopPropagation()}
+                        onBlur={() => {
+                          void commitRenameDocument(document.id)
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault()
+                            void commitRenameDocument(document.id)
+                          }
+
+                          if (event.key === 'Escape') {
+                            event.preventDefault()
+                            cancelRenameDocument()
+                          }
+                        }}
+                      />
+                    ) : (
+                      <button
+                        className="sidebar-item-title"
+                        type="button"
+                        onDoubleClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          beginRenameDocument(document)
+                        }}
+                        title="Double-click to rename"
+                      >
+                        {document.title}{documentHasUnsavedChanges ? ' •' : ''}
+                      </button>
+                    )}
+
+                    <button
+                      className="delete-doc-button"
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        void handleDeleteDocument(document.id)
+                      }}
+                      title="Delete document"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div className="sidebar-item-meta">{formatLastModified(document.updatedAt)}</div>
+                </li>
+              )
+            })}
           </ul>
           <button className="sidebar-button" type="button" onClick={handleCreateNewDocument}>
             + New Document
@@ -307,6 +601,17 @@ function App() {
         <section className="editor-panel">
           <div className="toolbar-panel">
             <button
+              onClick={() => {
+                void handleSaveDocument()
+              }}
+              disabled={!selectedDocument || saveState === 'saving'}
+              className="save-button"
+              type="button"
+            >
+              Save
+            </button>
+
+            <button
               onClick={handleRun}
               disabled={isRunning}
               className="run-button"
@@ -314,6 +619,13 @@ function App() {
             >
               {isRunning ? 'Running...' : 'Run'}
             </button>
+
+            <span className={`save-status save-status-${saveState}`}>
+              {saveState === 'saving' && 'Saving...'}
+              {saveState === 'saved' && 'Saved ✓'}
+              {saveState === 'error' && 'Save failed'}
+              {saveState === 'idle' && (hasUnsavedChanges ? 'Unsaved changes' : 'All changes saved')}
+            </span>
           </div>
 
           <div className="editor-surface">
@@ -356,6 +668,12 @@ function App() {
           )}
         </div>
       </section>
+
+      {toastMessage && (
+        <div className="toast" role="status" aria-live="polite">
+          {toastMessage}
+        </div>
+      )}
     </div>
   )
 }
