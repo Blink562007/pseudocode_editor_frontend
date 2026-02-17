@@ -3,11 +3,36 @@ import Editor, { type Monaco } from '@monaco-editor/react'
 import { validatePseudocode, type ValidationError, type ValidationWarning } from './api/pseudocodeApi'
 import './App.css'
 
+interface EditorDocument {
+  id: string
+  title: string
+  content: string
+}
+
+function createDocumentId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+
+  return `doc-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
 function App() {
-  const [code, setCode] = useState('// Write your pseudocode here\n')
+  const [documents, setDocuments] = useState<EditorDocument[]>([
+    { id: createDocumentId(), title: 'Untitled', content: '' }
+  ])
+  const [selectedDocumentId, setSelectedDocumentId] = useState<string>('')
+  const [code, setCode] = useState('')
   const [output, setOutput] = useState<string[]>([])
   const [editorKey, setEditorKey] = useState(0)
   const [isRunning, setIsRunning] = useState(false)
+
+  useEffect(() => {
+    if (!selectedDocumentId && documents.length > 0) {
+      setSelectedDocumentId(documents[0].id)
+      setCode(documents[0].content)
+    }
+  }, [documents, selectedDocumentId])
 
   useEffect(() => {
     const handleResize = () => setEditorKey(prev => prev + 1)
@@ -15,6 +40,55 @@ function App() {
 
     return () => window.removeEventListener('resize', handleResize)
   }, [])
+
+  const selectedDocument = documents.find((document) => document.id === selectedDocumentId) ?? null
+  const hasUnsavedChanges = selectedDocument !== null && code !== selectedDocument.content
+
+  const handleSelectDocument = (documentId: string) => {
+    if (documentId === selectedDocumentId) {
+      return
+    }
+
+    if (hasUnsavedChanges) {
+      const shouldDiscardChanges = window.confirm(
+        'You have unsaved changes. Discard them and switch documents?'
+      )
+
+      if (!shouldDiscardChanges) {
+        return
+      }
+    }
+
+    const nextDocument = documents.find((document) => document.id === documentId)
+    if (!nextDocument) {
+      return
+    }
+
+    setSelectedDocumentId(documentId)
+    setCode(nextDocument.content)
+  }
+
+  const handleCreateNewDocument = () => {
+    if (hasUnsavedChanges) {
+      const shouldDiscardChanges = window.confirm(
+        'You have unsaved changes. Create a new document anyway?'
+      )
+
+      if (!shouldDiscardChanges) {
+        return
+      }
+    }
+
+    const newDocument: EditorDocument = {
+      id: createDocumentId(),
+      title: 'Untitled',
+      content: ''
+    }
+
+    setDocuments((previousDocuments) => [newDocument, ...previousDocuments])
+    setSelectedDocumentId(newDocument.id)
+    setCode('')
+  }
 
   const handleEditorWillMount = (monaco: Monaco) => {
     // Register custom pseudocode language
@@ -135,9 +209,19 @@ function App() {
         <aside className="sidebar-panel">
           <h2>Documents</h2>
           <ul className="sidebar-list">
-            <li className="sidebar-item active">Untitled</li>
+            {documents.map((document) => (
+              <li
+                key={document.id}
+                className={document.id === selectedDocumentId ? 'sidebar-item active' : 'sidebar-item'}
+                onClick={() => handleSelectDocument(document.id)}
+              >
+                {document.title}
+              </li>
+            ))}
           </ul>
-          <button className="sidebar-button" type="button">+ New Document</button>
+          <button className="sidebar-button" type="button" onClick={handleCreateNewDocument}>
+            + New Document
+          </button>
         </aside>
 
         <section className="editor-panel">
