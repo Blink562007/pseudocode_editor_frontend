@@ -13,6 +13,7 @@
   box-sizing: border-box;
   background: #0f172a;
   color: #e2e8f0;
+  position: relative;
 }
 
 .header-panel,
@@ -229,6 +230,33 @@
   color: #f87171;
 }
 
+.autosave-status {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  margin-left: 8px;
+}
+
+.autosave-status-saving {
+  color: #fbbf24;
+}
+
+.autosave-status-saved {
+  color: #06b6d4;
+  animation: autosave-flash 600ms ease;
+}
+
+@keyframes autosave-flash {
+  0% {
+    text-shadow: 0 0 0 rgba(6, 182, 212, 0);
+  }
+  50% {
+    text-shadow: 0 0 8px rgba(6, 182, 212, 0.5);
+  }
+  100% {
+    text-shadow: 0 0 0 rgba(6, 182, 212, 0);
+  }
+}
+
 @keyframes saved-flash {
   0% {
     text-shadow: 0 0 0 rgba(34, 197, 94, 0);
@@ -293,6 +321,22 @@
   padding: 10px 12px;
   font-size: 0.85rem;
   font-weight: 700;
+  z-index: 1000;
+}
+
+.offline-banner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: #fbbf24;
+  color: #422006;
+  text-align: center;
+  padding: 8px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  z-index: 999;
+  border-radius: 0;
 }
 
 @media (max-width: 1200px) {

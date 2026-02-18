@@ -53,9 +53,13 @@ function App() {
   const [renamingDocumentId, setRenamingDocumentId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [toastMessage, setToastMessage] = useState<string | null>(null)
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const [isOnline, setIsOnline] = useState(true)
 
   const saveStateTimeoutRef = useRef<number | null>(null)
   const toastTimeoutRef = useRef<number | null>(null)
+  const autoSaveTimeoutRef = useRef<number | null>(null)
+  const autoSaveStatusTimeoutRef = useRef<number | null>(null)
 
   useEffect(() => {
     const loadDocuments = async () => {
@@ -72,6 +76,35 @@ function App() {
 
         setDocuments(sortedDocuments)
 
+        // Restore from localStorage if available
+        const localStorageKey = 'pseudocode-autosave'
+        const autoSavedDataRaw = localStorage.getItem(localStorageKey)
+
+        if (autoSavedDataRaw) {
+          try {
+            const autoSavedData = JSON.parse(autoSavedDataRaw)
+            
+            if (autoSavedData && autoSavedData.documentId && autoSavedData.content) {
+              const matchingDocument = sortedDocuments.find(doc => doc.id === autoSavedData.documentId)
+              
+              if (matchingDocument) {
+                setSelectedDocumentId(autoSavedData.documentId)
+                setCode(autoSavedData.content)
+                setAutoSaveStatus('saved')
+                
+                setTimeout(() => {
+                  setAutoSaveStatus('idle')
+                }, 1500)
+                
+                return
+              }
+            }
+          } catch (error) {
+            // Invalid JSON, ignore
+            localStorage.removeItem(localStorageKey)
+          }
+        }
+
         if (sortedDocuments.length > 0) {
           setSelectedDocumentId(sortedDocuments[0].id)
           setCode(sortedDocuments[0].content)
@@ -81,6 +114,7 @@ function App() {
         }
       } catch (error) {
         setDocumentsLoadError(error instanceof Error ? error.message : 'Failed to load documents')
+        showToast('Failed to load documents from server')
         setDocuments([])
         setSelectedDocumentId('')
         setCode('')
@@ -120,6 +154,71 @@ function App() {
       if (toastTimeoutRef.current !== null) {
         window.clearTimeout(toastTimeoutRef.current)
       }
+
+      if (autoSaveTimeoutRef.current !== null) {
+        window.clearTimeout(autoSaveTimeoutRef.current)
+      }
+
+      if (autoSaveStatusTimeoutRef.current !== null) {
+        window.clearTimeout(autoSaveStatusTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  // Auto-save to localStorage every 2 seconds (debounced)
+  useEffect(() => {
+    if (!selectedDocumentId || !code) {
+      return
+    }
+
+    if (autoSaveTimeoutRef.current !== null) {
+      window.clearTimeout(autoSaveTimeoutRef.current)
+    }
+
+    autoSaveTimeoutRef.current = window.setTimeout(() => {
+      const localStorageKey = 'pseudocode-autosave'
+      const dataToSave = {
+        documentId: selectedDocumentId,
+        content: code,
+        timestamp: new Date().toISOString()
+      }
+
+      localStorage.setItem(localStorageKey, JSON.stringify(dataToSave))
+      
+      setAutoSaveStatus('saving')
+      
+      if (autoSaveStatusTimeoutRef.current !== null) {
+        window.clearTimeout(autoSaveStatusTimeoutRef.current)
+      }
+
+      autoSaveStatusTimeoutRef.current = window.setTimeout(() => {
+        setAutoSaveStatus('saved')
+
+        autoSaveStatusTimeoutRef.current = window.setTimeout(() => {
+          setAutoSaveStatus('idle')
+        }, 1500)
+      }, 300)
+    }, 2000)
+  }, [selectedDocumentId, code])
+
+  // Online/offline detection
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true)
+      showToast('Back online')
+    }
+
+    const handleOffline = () => {
+      setIsOnline(false)
+      showToast('You are offline')
+    }
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
     }
   }, [])
 
@@ -265,6 +364,9 @@ function App() {
           ...previousDocuments
         ]))
 
+        // Clear localStorage after successful save
+        localStorage.removeItem('pseudocode-autosave')
+
         setSavedIndicator()
         return
       }
@@ -305,12 +407,17 @@ function App() {
         return sortDocumentsByUpdatedAt(mapped)
       })
 
+      // Clear localStorage after successful save
+      localStorage.removeItem('pseudocode-autosave')
+
       setSavedIndicator()
     } catch (error) {
       setSaveState('error')
+      const errorMessage = error instanceof Error ? error.message : 'Failed to save document'
+      showToast(`Save failed: ${errorMessage}`)
       setOutput([
         '> Error:',
-        error instanceof Error ? error.message : 'Failed to save document'
+        errorMessage
       ])
     }
   }
@@ -349,9 +456,11 @@ function App() {
 
       showToast('Document deleted')
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete document'
+      showToast(`Delete failed: ${errorMessage}`)
       setOutput([
         '> Error:',
-        error instanceof Error ? error.message : 'Failed to delete document'
+        errorMessage
       ])
     }
   }
@@ -410,9 +519,11 @@ function App() {
           : document
       ))))
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to rename document'
+      showToast(`Rename failed: ${errorMessage}`)
       setOutput([
         '> Error:',
-        error instanceof Error ? error.message : 'Failed to rename document'
+        errorMessage
       ])
     }
   }
@@ -516,9 +627,11 @@ function App() {
         setOutput(['> Validation passed', '> No errors found'])
       }
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to validate code'
+      showToast(`Validation failed: ${errorMessage}`)
       setOutput([
         '> Error:',
-        error instanceof Error ? error.message : 'Failed to validate code'
+        errorMessage
       ])
     } finally {
       setIsRunning(false)
@@ -527,6 +640,12 @@ function App() {
 
   return (
     <div className="app-shell">
+      {!isOnline && (
+        <div className="offline-banner" role="alert">
+          ⚠️ You are offline. Changes will be saved locally only.
+        </div>
+      )}
+
       <header className="header-panel">
         <div className="header-title-wrap">
           <h1>{selectedDocumentTitle}{hasUnsavedChanges ? ' •' : ''}</h1>
@@ -625,11 +744,11 @@ function App() {
               onClick={() => {
                 void handleSaveDocument()
               }}
-              disabled={saveState === 'saving'}
+              disabled={saveState === 'saving' || !isOnline}
               className="save-button"
               type="button"
             >
-              Save
+              {saveState === 'saving' ? 'Saving...' : 'Save'}
             </button>
 
             <button
@@ -647,6 +766,13 @@ function App() {
               {saveState === 'error' && 'Save failed'}
               {saveState === 'idle' && (hasUnsavedChanges ? 'Unsaved changes' : 'All changes saved')}
             </span>
+
+            {autoSaveStatus !== 'idle' && (
+              <span className={`autosave-status autosave-status-${autoSaveStatus}`}>
+                {autoSaveStatus === 'saving' && 'Auto-saving locally...'}
+                {autoSaveStatus === 'saved' && 'Auto-saved locally ✓'}
+              </span>
+            )}
           </div>
 
           <div className="editor-surface">
