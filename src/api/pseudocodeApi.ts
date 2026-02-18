@@ -16,11 +16,16 @@ export interface SavePseudocodeRequest {
   language: string;
 }
 
+export interface ExecutionEvent {
+  kind: string; // "output" | "error" | "system"
+  text: string;
+  line?: number;
+}
+
 export interface ExecuteResponse {
   success: boolean;
-  output?: string;
-  error?: string;
-  line?: number;
+  events: ExecutionEvent[];
+  executionTimeMs: number;
 }
 
 export interface ValidationError {
@@ -45,27 +50,20 @@ export interface ValidationResponse {
  * Execute pseudocode by sending it to the backend
  */
 export async function executePseudocode(code: string): Promise<ExecuteResponse> {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/pseudocode`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ content: code }),
-    });
+  const response = await fetch(`${API_BASE_URL}/api/pseudocode/execute`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ content: code, language: 'pseudocode' }),
+  });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to connect to backend',
-    };
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
   }
+
+  const data = await response.json();
+  return data;
 }
 
 /**

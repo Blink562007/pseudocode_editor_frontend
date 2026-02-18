@@ -3,13 +3,12 @@ import Editor, { type Monaco } from '@monaco-editor/react'
 import {
   createPseudocodeDocument,
   deletePseudocodeDocument,
+  executePseudocode,
   getPseudocodeDocumentById,
   getPseudocodeDocuments,
   updatePseudocodeDocument,
-  validatePseudocode,
-  type PseudocodeDocument,
-  type ValidationError,
-  type ValidationWarning
+  type ExecutionEvent,
+  type PseudocodeDocument
 } from './api/pseudocodeApi'
 import './App.css'
 
@@ -591,44 +590,29 @@ function App() {
 
   const handleRun = async () => {
     setIsRunning(true)
-    setOutput(['> Validating pseudocode...'])
+    setOutput(['> Running pseudocode...'])
     
     try {
-      // Validate the code
-      const validationResult = await validatePseudocode(code)
+      // Execute the code
+      const result = await executePseudocode(code)
       
-      if (!validationResult.isValid) {
-        const errorMessages = ['> Validation Failed:', '']
-        
-        validationResult.errors.forEach((error: ValidationError) => {
-          errorMessages.push(`Line ${error.lineNumber}: ${error.message}`)
-        })
-        
-        if (validationResult.warnings.length > 0) {
-          errorMessages.push('', '> Warnings:')
-          validationResult.warnings.forEach((warning: ValidationWarning) => {
-            errorMessages.push(`Line ${warning.lineNumber}: ${warning.message}`)
-          })
+      // Convert events to output lines
+      const outputLines: string[] = []
+      
+      result.events.forEach((event: ExecutionEvent) => {
+        if (event.kind === 'output') {
+          outputLines.push(event.text)
+        } else if (event.kind === 'error') {
+          outputLines.push(`> ${event.text}`)
+        } else if (event.kind === 'system') {
+          outputLines.push(`> ${event.text}`)
         }
-        
-        setOutput(errorMessages)
-        setIsRunning(false)
-        return
-      }
-
-      // Show success with any warnings
-      if (validationResult.warnings.length > 0) {
-        const messages = ['> Validation passed with warnings:', '']
-        validationResult.warnings.forEach((warning: ValidationWarning) => {
-          messages.push(`Line ${warning.lineNumber}: ${warning.message}`)
-        })
-        setOutput(messages)
-      } else {
-        setOutput(['> Validation passed', '> No errors found'])
-      }
+      })
+      
+      setOutput(outputLines)
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to validate code'
-      showToast(`Validation failed: ${errorMessage}`)
+      const errorMessage = error instanceof Error ? error.message : 'Failed to execute code'
+      showToast(`Execution failed: ${errorMessage}`)
       setOutput([
         '> Error:',
         errorMessage
