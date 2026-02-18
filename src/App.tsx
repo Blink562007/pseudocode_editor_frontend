@@ -702,31 +702,36 @@ function App() {
                         }}
                       />
                     ) : (
-                      <button
-                        className="sidebar-item-title"
-                        type="button"
-                        onDoubleClick={(event) => {
-                          event.preventDefault()
-                          event.stopPropagation()
-                          beginRenameDocument(document)
-                        }}
-                        title="Double-click to rename"
-                      >
-                        {document.title}{documentHasUnsavedChanges ? ' •' : ''}
-                      </button>
+                      <>
+                        <span className="sidebar-item-title" title={document.title}>
+                          {document.title}{documentHasUnsavedChanges ? ' •' : ''}
+                        </span>
+                        <div className="sidebar-item-actions">
+                          <button
+                            className="rename-doc-button"
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              beginRenameDocument(document)
+                            }}
+                            title="Rename document"
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            className="delete-doc-button"
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              void handleDeleteDocument(document.id)
+                            }}
+                            title="Delete document"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </>
                     )}
-
-                    <button
-                      className="delete-doc-button"
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        void handleDeleteDocument(document.id)
-                      }}
-                      title="Delete document"
-                    >
-                      ✕
-                    </button>
                   </div>
                   <div className="sidebar-item-meta">{formatLastModified(document.updatedAt)}</div>
                 </li>
